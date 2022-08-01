@@ -27,13 +27,21 @@ internal class BridgeTrace(
         context: Map<String, Any?>,
         timestampMs: Long
     ): String {
-        val span = tracer.buildSpan(operation)
+        val builtSpan = tracer.buildSpan(operation)
             .withStartTimestamp(TimeUnit.MILLISECONDS.toMicros(timestampMs))
-            .start()
+        val parent = associateChildren(context)
+        if (parent != null) {
+            builtSpan.asChildOf(parent)
+        }
+        val span = builtSpan.start()
         val spanContext = span.context()
-
         span.setTags(context)
+        val id = retrieveId(context)
+        if (id != null) {
+            span.setBaggageItem("id", id)
+        }
         span.setTags(GlobalState.globalAttributes)
+//        TODO: set this to the passed id?
         val spanId = spanContext.toSpanId()
         spanMap[spanId] = span
         return spanId
@@ -59,5 +67,25 @@ internal class BridgeTrace(
                 else -> setTag(key, value?.toString())
             }
         }
+    }
+
+    private fun associateChildren(context: Map<String, Any?>): Span? {
+        if (context.containsKey("childOf")) {
+            val parent = spanMap[context["childOf"]]
+            if (parent != null) {
+                return parent
+            }
+        }
+        return null
+    }
+
+    private fun retrieveId(context: Map<String, Any?>): String? {
+        if (context.containsKey("view.id")) {
+            val id = context["view.id"] as String?
+            if (id !== null) {
+                return id
+            }
+        }
+        return null
     }
 }
